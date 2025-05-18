@@ -1,8 +1,8 @@
 # Thu Dau Mot University GenAI workshop
 
-Create by: Tony Do
-E-mail: vanhuong.robotics@gmail.com
-Date: 2025.05.18
+Create by: Tony Do<br>
+E-mail: vanhuong.robotics@gmail.com<br>
+Date: 2025.05.18<br>
 
 ## Instruction
 
