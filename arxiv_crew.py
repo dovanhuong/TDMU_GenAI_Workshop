@@ -1,7 +1,15 @@
 import warnings
 warnings.filterwarnings('ignore')
+import logging, sys, io
+from contextlib import redirect_stdout
+import builtins
 
-import os, json, re
+# Suppress all logging output
+logging.getLogger().setLevel(logging.CRITICAL)
+logging.getLogger("litellm").setLevel(logging.CRITICAL)
+logging.getLogger("uvicorn").setLevel(logging.CRITICAL)
+
+import os, json, re, sys
 import argparse
 from typing import Type, List
 from datetime import datetime, timedelta
@@ -13,6 +21,14 @@ from crewai import Agent, Task, Crew, LLM
 from crewai.tools import BaseTool
 from pydantic import BaseModel
 import ast
+
+# Patch print to suppress unwanted messages from litellm
+original_print = builtins.print
+def silent_print(*args, **kwargs):
+    if "Provider List" in str(args[0]):
+        return
+    original_print(*args, **kwargs)
+builtins.print = silent_print
 
 # Fix LiteLLM param check spam
 litellm.get_supported_params = lambda *args, **kwargs: {}
@@ -65,15 +81,18 @@ class FetchArxivPapersTool(BaseTool):
 
 tool = FetchArxivPapersTool()
 
-# --- Agent ---
-researcher = Agent(
-    role="AI Researcher",
-    goal="Analyze and summarize top AI papers from arXiv.",
-    backstory="A seasoned researcher with expertise in understanding research papers and formatting summaries.",
-    verbose=True,
-    tools=[tool],
-    llm=llm
-)
+# Redirect stdout
+f = io.StringIO()
+with redirect_stdout(f):
+    # --- Agent ---
+    researcher = Agent(
+        role="AI Researcher",
+        goal="Analyze and summarize top AI papers from arXiv.",
+        backstory="A seasoned researcher with expertise in understanding research papers and formatting summaries.",
+        verbose=True,
+        tools=[tool],
+        llm=llm
+    )
 
 class PaperOutput(BaseModel):
     title: str
@@ -81,16 +100,19 @@ class PaperOutput(BaseModel):
     summary: str
     url: str
 
-# --- Task ---
-task = Task(
-    description=(
-        f"Use the fetch_arxiv_papers tool to get the top 3 papers from arXiv published on {args.date}. "
-        f"For each paper, return a list in the format of PaperOutput, with fields: title, authors, summary, and url."
-    ),
-    expected_output="List of PaperOutput models describing each paper.",
-    output_pydantic_schema=List[PaperOutput],
-    agent=researcher
-)
+# Redirect stdout
+f = io.StringIO()
+with redirect_stdout(f):
+    # --- Task ---
+    task = Task(
+        description=(
+            f"Use the fetch_arxiv_papers tool to get the top 3 papers from arXiv published on {args.date}. "
+            f"For each paper, return a list in the format of PaperOutput, with fields: title, authors, summary, and url."
+        ),
+        expected_output="List of PaperOutput models describing each paper.",
+        output_pydantic_schema=List[PaperOutput],
+        agent=researcher
+    )
 
 # --- Run Crew ---
 crew = Crew(agents=[researcher], tasks=[task], verbose=True)
@@ -100,7 +122,7 @@ task_output = crew_output.tasks_output[0]
 import json, re
 
 raw_data = task_output.raw
-print(f"\nTony raw data: \n\n{raw_data}\n\n")
+#print(f"\nTony raw data: \n\n{raw_data}\n\n")
 raw = raw_data.strip()
 # ✅ Loại bỏ code block markdown nếu có
 if raw.startswith("```") and raw.endswith("```"):
@@ -116,8 +138,9 @@ except json.JSONDecodeError:
     try:
         papers = json.loads(fixed_raw)
     except Exception as e:
-        print("❌ Still failed to parse JSON:", e)
+        print("\nSomething parsing content fail and not enough information, please try again!\n")
         papers = []
+        sys.exit()
 
 
 html_rows = ""
